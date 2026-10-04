@@ -4,6 +4,8 @@ export type WorkspaceStatus = 'loading' | 'ready' | 'saving' | 'error'
 
 export interface DeskItem {
   id: string
+  /** 跨方案复制的稳定身份：复制方案或从别的方案采纳设备时保留，用于对比时识别“同一件设备” */
+  refId: string
   type: DeviceType
   widthMm: number
   heightMm: number
@@ -77,8 +79,10 @@ export function createItem(type: DeviceType, index = 0): DeskItem {
   const columns = 3
   const x = 80 + (index % columns) * 280
   const y = 90 + Math.floor(index / columns) * 240
+  const id = createId('item')
   return {
-    id: createId('item'),
+    id,
+    refId: id,
     type,
     widthMm: definition.widthMm,
     heightMm: definition.heightMm,
@@ -86,6 +90,11 @@ export function createItem(type: DeviceType, index = 0): DeskItem {
     y,
     rotation: 0,
   }
+}
+
+/** 复制一组设备到新方案：每件分配新 id，但保留 refId，让方案之间仍能认出是同一件设备 */
+export function cloneItemsWithFreshIds(items: DeskItem[]): DeskItem[] {
+  return items.map((item) => ({ ...item, id: createId('item') }))
 }
 
 export function createPlan(name = '我的工作台', withDemo = true): WorkspacePlan {
@@ -109,4 +118,15 @@ export function createPlan(name = '我的工作台', withDemo = true): Workspace
 export function createInitialDocument(): WorkspaceDocument {
   const plan = createPlan('我的工作台', true)
   return { version: 1, plans: [plan], activePlanId: plan.id }
+}
+
+/** 兼容旧版本地数据：早期保存的设备没有 refId，用自身 id 补上 */
+export function normalizeDocument(document: WorkspaceDocument): WorkspaceDocument {
+  return {
+    ...document,
+    plans: document.plans.map((plan) => ({
+      ...plan,
+      items: plan.items.map((item) => ({ ...item, refId: item.refId ?? item.id })),
+    })),
+  }
 }

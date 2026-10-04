@@ -20,4 +20,14 @@ describe('local workspace repository', () => {
     const repository = new LocalWorkspaceRepository(memoryStorage('{broken'))
     await expect(repository.load()).resolves.toBeNull()
   })
+
+  it('fills missing refId for documents saved before device identity existed', async () => {
+    const document = createInitialDocument()
+    const legacy = JSON.parse(JSON.stringify(document)) as { plans: { items: { id: string; refId?: string }[] }[] }
+    legacy.plans[0].items.forEach((item) => { delete item.refId })
+    const repository = new LocalWorkspaceRepository(memoryStorage(JSON.stringify(legacy)))
+    const loaded = await repository.load()
+    expect(loaded).not.toBeNull()
+    expect(loaded?.plans[0].items.every((item) => typeof item.refId === 'string' && item.refId === item.id)).toBe(true)
+  })
 })

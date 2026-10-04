@@ -1,6 +1,7 @@
-import { Check, Cloud, FileCheck2, PanelTop, TriangleAlert } from 'lucide-react'
+import { Check, Cloud, Columns3, FileCheck2, PanelTop, TriangleAlert } from 'lucide-react'
 import { DEVICE_DEFINITIONS } from '../shared/models'
 import { CanvasStage } from '../features/canvas/components/CanvasStage'
+import { CompareOverlay } from '../features/compare/components/CompareOverlay'
 import { DevicePalette } from '../features/materials/components/DevicePalette'
 import { InspectorPanel } from '../features/inspection/components/InspectorPanel'
 import { PreviewOverlay } from '../features/inspection/components/PreviewOverlay'
@@ -21,7 +22,7 @@ export function App() {
       <section className="app-main">
         <header className="topbar">
           <div className="breadcrumb"><span>工作台</span><span>/</span><strong>{activePlan.name}</strong></div>
-          <div className="topbar-actions"><span className={`save-state ${viewModel.status === 'error' ? 'save-error' : ''}`}><Cloud size={15} /> {viewModel.status === 'saving' ? '保存中…' : viewModel.status === 'error' ? '保存异常' : '已保存到本地'}</span><button className="preview-button" onClick={viewModel.openPreview} type="button"><PanelTop size={16} /> 预览方案</button><span className="avatar">FD</span></div>
+          <div className="topbar-actions"><span className={`save-state ${viewModel.status === 'error' ? 'save-error' : ''}`}><Cloud size={15} /> {viewModel.status === 'saving' ? '保存中…' : viewModel.status === 'error' ? '保存异常' : '已保存到本地'}</span><button className="preview-button" disabled={document.plans.length < 2} onClick={viewModel.openCompare} title={document.plans.length < 2 ? '至少再有一个方案才能对比，可先复制当前方案' : '与其他方案并排对比'} type="button"><Columns3 size={16} /> 对比方案</button><button className="preview-button" onClick={viewModel.openPreview} type="button"><PanelTop size={16} /> 预览方案</button><span className="avatar">FD</span></div>
         </header>
         <div className="workspace-content">
           <div className="page-heading"><div><span className="eyebrow">DESK PLANNER / {new Date().getFullYear()}</span><h1>把桌面，变成一张清晰的地图。</h1><p>先放置，再调整。每个尺寸与间距都在你的掌控之中。</p></div><div className="feedback-chip"><span className={viewModel.status === 'error' ? 'feedback-icon error' : 'feedback-icon'}>{viewModel.status === 'error' ? <TriangleAlert size={14} /> : <Check size={14} />}</span>{viewModel.feedback}</div></div>
@@ -30,6 +31,20 @@ export function App() {
         </div>
       </section>
       {viewModel.isPreviewOpen && <PreviewOverlay plan={activePlan} analysis={analysis} issueCount={issueCount} onClose={viewModel.closePreview} />}
+      {viewModel.isCompareOpen && viewModel.activeSummary && (
+        <CompareOverlay
+          currentPlan={activePlan}
+          currentSummary={viewModel.activeSummary}
+          otherPlans={document.plans.filter((plan) => plan.id !== activePlan.id)}
+          selectedIds={viewModel.comparePlanIds}
+          comparisons={viewModel.comparisons}
+          notice={viewModel.adoptNotice}
+          onTogglePlan={viewModel.toggleComparePlan}
+          onAdoptItem={viewModel.adoptItemFromPlan}
+          onAdoptPlan={viewModel.adoptEntirePlan}
+          onClose={viewModel.closeCompare}
+        />
+      )}
     </main>
   )
 }
