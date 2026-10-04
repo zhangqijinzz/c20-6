@@ -3,6 +3,7 @@ import {
   createId,
   createInitialDocument,
   createPlan,
+  getItemIdentity,
   type DeskItem,
   type DeviceType,
   type LayoutAnalysis,
@@ -14,6 +15,14 @@ import { clampDeskSize, clampItemDimension } from '../../shared/layoutRules'
 import { moveCanvasItem, rotateCanvasItem } from '../canvas/canvasViewModel'
 import { createMaterialDraft } from '../materials/materialsViewModel'
 import { inspectPlan } from '../inspection/inspectionViewModel'
+import {
+  buildAdoptedPlan,
+  buildPlacementPlan,
+  buildReplacedPlan,
+  formatAdoptionNotice,
+  labelPlanItems,
+  snapshotPlan,
+} from '../compare/compareViewModel'
 import { LocalWorkspaceRepository, type WorkspaceRepository } from './workspaceRepository'
 
 export interface WorkspaceViewModel {
@@ -26,6 +35,9 @@ export interface WorkspaceViewModel {
   issueCount: number
   feedback: string
   isPreviewOpen: boolean
+  compareIds: string[]
+  isCompareOpen: boolean
+  adoptionNotice: string | null
   selectItem: (id: string | null) => void
   addItem: (type: DeviceType) => void
   removeItem: (id: string) => void
@@ -39,6 +51,12 @@ export interface WorkspaceViewModel {
   deleteCurrentPlan: () => void
   openPreview: () => void
   closePreview: () => void
+  toggleComparePlan: (id: string) => void
+  openCompare: () => void
+  closeCompare: () => void
+  adoptItemFromPlan: (planId: string, itemId: string) => void
+  applyPlacementFromPlan: (planId: string, itemId: string) => void
+  replaceActivePlanWith: (planId: string) => void
 }
 
 const emptyInspection = { analysis: { overlapIds: [], outOfBoundsIds: [], coveragePercent: 0, status: 'clear' as const }, issueIds: [], issueCount: 0 }
@@ -49,6 +67,9 @@ export function useWorkspaceViewModel(repository?: WorkspaceRepository): Workspa
   const [document, setDocument] = useState<WorkspaceDocument | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [compareIds, setCompareIds] = useState<string[]>([])
+  const [isCompareOpen, setIsCompareOpen] = useState(false)
+  const [adoptionNotice, setAdoptionNotice] = useState<string | null>(null)
   const [feedback, setFeedback] = useState('正在准备你的工作台…')
 
   useEffect(() => {
@@ -148,7 +169,7 @@ export function useWorkspaceViewModel(repository?: WorkspaceRepository): Workspa
       ...activePlan,
       id: createId('plan'),
       name: `${activePlan.name} · 副本`,
-      items: activePlan.items.map((item) => ({ ...item, id: createId('item') })),
+      items: activePlan.items.map((item) => ({ ...item, id: createId('item'), originId: getItemIdentity(item) })),
       updatedAt: new Date().toISOString(),
     }
     void persist({ ...document, plans: [...document.plans, copy], activePlanId: copy.id }, '方案已复制')
@@ -159,6 +180,7 @@ export function useWorkspaceViewModel(repository?: WorkspaceRepository): Workspa
     if (!document || !document.plans.some((plan) => plan.id === id)) return
     void persist({ ...document, activePlanId: id }, '已切换方案')
     setSelectedItemId(null)
+    setCompareIds((current) => current.filter((planId) => planId !== id))
   }, [document, persist])
 
   const deleteCurrentPlan = useCallback(() => {
@@ -169,10 +191,65 @@ export function useWorkspaceViewModel(repository?: WorkspaceRepository): Workspa
     const remaining = document.plans.filter((plan) => plan.id !== activePlan.id)
     void persist({ ...document, plans: remaining, activePlanId: remaining[0].id }, '方案已删除')
     setSelectedItemId(null)
+    setCompareIds((current) => current.filter((planId) => planId !== activePlan.id))
   }, [activePlan, document, persist])
 
   const openPreview = useCallback(() => setIsPreviewOpen(true), [])
   const closePreview = useCallback(() => setIsPreviewOpen(false), [])
+
+  const toggleComparePlan = useCallback((id: string) => {
+    if (!document || id === document.activePlanId) return
+    setCompareIds((current) => current.includes(id)
+      ? current.filter((planId) => planId !== id)
+      : current.length >= 2 ? current : [...current, id])
+    setAdoptionNotice(null)
+  }, [document])
+
+  const openCompare = useCallback(() => {
+    setIsCompareOpen(true)
+    setAdoptionNotice(null)
+  }, [])
+
+  const closeCompare = useCallback(() => {
+    setIsCompareOpen(false)
+    setAdoptionNotice(null)
+  }, [])
+
+  const adoptItemFromPlan = useCallback((planId: string, itemId: string) => {
+    if (!document || !activePlan) return
+    const sourcePlan = document.plans.find((plan) => plan.id === planId)
+    if (!sourcePlan) return
+    const adopted = buildAdoptedPlan(activePlan, sourcePlan, itemId)
+    if (!adopted) return
+    const label = labelPlanItems(sourcePlan.items).get(itemId) ?? '设备'
+    const notice = formatAdoptionNotice(`已把「${sourcePlan.name}」的${label}搬入当前方案`, snapshotPlan(activePlan), snapshotPlan(adopted.plan))
+    updateActivePlan(() => adopted.plan, notice)
+    setAdoptionNotice(notice)
+    setSelectedItemId(adopted.item.id)
+  }, [activePlan, document, updateActivePlan])
+
+  const applyPlacementFromPlan = useCallback((planId: string, itemId: string) => {
+    if (!document || !activePlan) return
+    const sourcePlan = document.plans.find((plan) => plan.id === planId)
+    if (!sourcePlan) return
+    const applied = buildPlacementPlan(activePlan, sourcePlan, itemId)
+    if (!applied) return
+    const label = labelPlanItems(activePlan.items).get(applied.item.id) ?? '设备'
+    const notice = formatAdoptionNotice(`已采用「${sourcePlan.name}」中${label}的摆法`, snapshotPlan(activePlan), snapshotPlan(applied.plan))
+    updateActivePlan(() => applied.plan, notice)
+    setAdoptionNotice(notice)
+  }, [activePlan, document, updateActivePlan])
+
+  const replaceActivePlanWith = useCallback((planId: string) => {
+    if (!document || !activePlan) return
+    const sourcePlan = document.plans.find((plan) => plan.id === planId)
+    if (!sourcePlan || sourcePlan.id === activePlan.id) return
+    const nextPlan = buildReplacedPlan(activePlan, sourcePlan)
+    const notice = formatAdoptionNotice(`已用「${sourcePlan.name}」整套替换当前方案`, snapshotPlan(activePlan), snapshotPlan(nextPlan))
+    updateActivePlan(() => nextPlan, notice)
+    setAdoptionNotice(notice)
+    setSelectedItemId(null)
+  }, [activePlan, document, updateActivePlan])
 
   return {
     status,
@@ -184,6 +261,9 @@ export function useWorkspaceViewModel(repository?: WorkspaceRepository): Workspa
     issueCount,
     feedback,
     isPreviewOpen,
+    compareIds,
+    isCompareOpen,
+    adoptionNotice,
     selectItem,
     addItem,
     removeItem,
@@ -197,5 +277,11 @@ export function useWorkspaceViewModel(repository?: WorkspaceRepository): Workspa
     deleteCurrentPlan,
     openPreview,
     closePreview,
+    toggleComparePlan,
+    openCompare,
+    closeCompare,
+    adoptItemFromPlan,
+    applyPlacementFromPlan,
+    replaceActivePlanWith,
   }
 }

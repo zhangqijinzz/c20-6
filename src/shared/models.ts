@@ -10,6 +10,8 @@ export interface DeskItem {
   x: number
   y: number
   rotation: number
+  /** 设备血缘：复制 / 搬入时保留，用于跨方案识别同一件设备 */
+  originId?: string
 }
 
 export interface WorkspacePlan {
@@ -70,6 +72,10 @@ export function getDeviceDefinition(type: DeviceType): DeviceDefinition {
 export function createId(prefix: string): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `${prefix}-${crypto.randomUUID()}`
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+export function getItemIdentity(item: DeskItem): string {
+  return item.originId ?? item.id
 }
 
 export function createItem(type: DeviceType, index = 0): DeskItem {

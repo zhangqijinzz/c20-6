@@ -1,9 +1,10 @@
 import { Check, Cloud, FileCheck2, PanelTop, TriangleAlert } from 'lucide-react'
-import { DEVICE_DEFINITIONS } from '../shared/models'
+import { DEVICE_DEFINITIONS, type WorkspacePlan } from '../shared/models'
 import { CanvasStage } from '../features/canvas/components/CanvasStage'
 import { DevicePalette } from '../features/materials/components/DevicePalette'
 import { InspectorPanel } from '../features/inspection/components/InspectorPanel'
 import { PreviewOverlay } from '../features/inspection/components/PreviewOverlay'
+import { CompareOverlay } from '../features/compare/components/CompareOverlay'
 import { PlanSidebar } from '../features/workbench/components/PlanSidebar'
 import { useWorkspaceViewModel } from '../features/workbench/workbenchViewModel'
 
@@ -15,9 +16,13 @@ export function App() {
     return <main className="loading-screen"><span className="loading-orb" /><p>正在打开 FocusDesk…</p></main>
   }
 
+  const comparePlans = viewModel.compareIds
+    .map((id) => document.plans.find((plan) => plan.id === id))
+    .filter((plan): plan is WorkspacePlan => plan !== undefined)
+
   return (
     <main className="app-shell">
-      <PlanSidebar plans={document.plans} activePlanId={document.activePlanId} onSelect={viewModel.selectPlan} onCreate={viewModel.createNewPlan} onDuplicate={viewModel.duplicatePlan} onDelete={viewModel.deleteCurrentPlan} />
+      <PlanSidebar plans={document.plans} activePlanId={document.activePlanId} compareIds={viewModel.compareIds} onSelect={viewModel.selectPlan} onCreate={viewModel.createNewPlan} onDuplicate={viewModel.duplicatePlan} onDelete={viewModel.deleteCurrentPlan} onToggleCompare={viewModel.toggleComparePlan} onOpenCompare={viewModel.openCompare} />
       <section className="app-main">
         <header className="topbar">
           <div className="breadcrumb"><span>工作台</span><span>/</span><strong>{activePlan.name}</strong></div>
@@ -30,6 +35,17 @@ export function App() {
         </div>
       </section>
       {viewModel.isPreviewOpen && <PreviewOverlay plan={activePlan} analysis={analysis} issueCount={issueCount} onClose={viewModel.closePreview} />}
+      {viewModel.isCompareOpen && comparePlans.length > 0 && (
+        <CompareOverlay
+          basePlan={activePlan}
+          otherPlans={comparePlans}
+          notice={viewModel.adoptionNotice}
+          onAdoptItem={viewModel.adoptItemFromPlan}
+          onApplyPlacement={viewModel.applyPlacementFromPlan}
+          onReplaceWith={viewModel.replaceActivePlanWith}
+          onClose={viewModel.closeCompare}
+        />
+      )}
     </main>
   )
 }
